@@ -4,23 +4,25 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strconv"
 
-	"github.com/ququzone/ckb-sdk-go/address"
-	"github.com/ququzone/ckb-sdk-go/crypto/secp256k1"
-	"github.com/ququzone/ckb-sdk-go/rpc"
-	"github.com/ququzone/ckb-sdk-go/transaction"
-	"github.com/ququzone/ckb-sdk-go/types"
-	"github.com/ququzone/ckb-sdk-go/utils"
+	"github.com/nervosnetwork/ckb-sdk-go/address"
+	"github.com/nervosnetwork/ckb-sdk-go/crypto/secp256k1"
+	"github.com/nervosnetwork/ckb-sdk-go/rpc"
+	"github.com/nervosnetwork/ckb-sdk-go/transaction"
+	"github.com/nervosnetwork/ckb-sdk-go/types"
+	"github.com/nervosnetwork/ckb-sdk-go/utils"
 	"github.com/ququzone/ckb-udt-cli/config"
 	"github.com/spf13/cobra"
 )
 
 var (
-	transferConf   *string
-	transferKey    *string
-	transferAmount *string
-	transferTo     *string
-	transferUUID   *string
+	transferConf            *string
+	transferKey             *string
+	transferAmount          *string
+	transferTo              *string
+	transferUUID            *string
+	transferFromBlockNumber *string
 )
 
 var transferCmd = &cobra.Command{
@@ -28,6 +30,19 @@ var transferCmd = &cobra.Command{
 	Short: "Transfer sUDT token",
 	Long:  `Transfer sUDT from secp256k1 lock cell.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		var unitFromBlockNumber uint64
+		var err error
+		if *transferFromBlockNumber == "" {
+			unitFromBlockNumber = 0
+		} else {
+			unitFromBlockNumber, err = strconv.ParseUint(*transferFromBlockNumber, 10, 64)
+			if err != nil {
+				Fatalf("fromBlockNumber invalid: %v", err)
+			}
+		}
+		if err != nil {
+			Fatalf("fromBlockNumber invalid: %v", err)
+		}
 		c, err := config.Init(*transferConf)
 		if err != nil {
 			Fatalf("load config error: %v", err)
@@ -52,7 +67,7 @@ var transferCmd = &cobra.Command{
 		uuid := types.HexToHash(*transferUUID).Bytes()
 
 		capacity := uint64(28400000000)
-		fee := uint64(5000)
+		fee := uint64(953)
 		recipientAddr, err := address.Parse(*transferTo)
 		if err != nil {
 			Fatalf("parse to address error: %v", err)
@@ -124,7 +139,7 @@ var transferCmd = &cobra.Command{
 
 		var feeCells *utils.CollectResult
 		if cells.Capacity < capacity+fee {
-			cellCollector := utils.NewCellCollector(client, fromScript, utils.NewCapacityCellProcessor(capacity+fee-cells.Capacity))
+			cellCollector := utils.NewCellCollector(client, fromScript, utils.NewCapacityCellProcessor(capacity+fee-cells.Capacity), unitFromBlockNumber)
 			feeCells, err = cellCollector.Collect()
 			if err != nil {
 				Fatalf("collect cell error: %v", err)
@@ -226,12 +241,14 @@ var transferCmd = &cobra.Command{
 			if recipientCell == nil {
 				change -= 14200000000
 			}
-			tx.Outputs = append(tx.Outputs, &types.CellOutput{
-				Capacity: change,
-				Lock:     fromScript,
-			})
+			if change >= 6100000000 {
+				tx.Outputs = append(tx.Outputs, &types.CellOutput{
+					Capacity: change,
+					Lock:     fromScript,
+				})
 
-			tx.OutputsData = append(tx.OutputsData, []byte{})
+				tx.OutputsData = append(tx.OutputsData, []byte{})
+			}
 		} else {
 			change := cells.Capacity - fee
 			if feeCells != nil {
@@ -277,6 +294,7 @@ func init() {
 	transferUUID = transferCmd.Flags().StringP("uuid", "u", "", "UDT uuid")
 	transferAmount = transferCmd.Flags().StringP("amount", "a", "", "Transfer amount")
 	transferTo = transferCmd.Flags().StringP("to", "t", "", "Transfer recipient address")
+	transferFromBlockNumber = transferCmd.Flags().StringP("transferFromBlockNumber", "f", "", "From block number")
 	_ = transferCmd.MarkFlagRequired("key")
 	_ = transferCmd.MarkFlagRequired("amount")
 	_ = transferCmd.MarkFlagRequired("uuid")

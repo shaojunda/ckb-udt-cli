@@ -3,21 +3,23 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strconv"
 
-	"github.com/ququzone/ckb-sdk-go/address"
-	"github.com/ququzone/ckb-sdk-go/crypto/secp256k1"
-	"github.com/ququzone/ckb-sdk-go/rpc"
-	"github.com/ququzone/ckb-sdk-go/transaction"
-	"github.com/ququzone/ckb-sdk-go/types"
-	"github.com/ququzone/ckb-sdk-go/utils"
+	"github.com/nervosnetwork/ckb-sdk-go/address"
+	"github.com/nervosnetwork/ckb-sdk-go/crypto/secp256k1"
+	"github.com/nervosnetwork/ckb-sdk-go/rpc"
+	"github.com/nervosnetwork/ckb-sdk-go/transaction"
+	"github.com/nervosnetwork/ckb-sdk-go/types"
+	"github.com/nervosnetwork/ckb-sdk-go/utils"
 	"github.com/ququzone/ckb-udt-cli/config"
 	"github.com/spf13/cobra"
 )
 
 var (
-	createCellConf *string
-	createCellKey  *string
-	createCellUUID *string
+	createCellConf            *string
+	createCellKey             *string
+	createCellUUID            *string
+	createCellFromBlockNumber *string
 )
 
 var createCellCmd = &cobra.Command{
@@ -25,6 +27,19 @@ var createCellCmd = &cobra.Command{
 	Short: "create anyone can pay cell for sUDT token",
 	Long:  `create anyone can pay cell for sUDT token.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		var unitFromBlockNumber uint64
+		var err error
+		if *createCellFromBlockNumber == "" {
+			unitFromBlockNumber = 0
+		} else {
+			unitFromBlockNumber, err = strconv.ParseUint(*createCellFromBlockNumber, 10, 64)
+			if err != nil {
+				Fatalf("fromBlockNumber invalid: %v", err)
+			}
+		}
+		if err != nil {
+			Fatalf("fromBlockNumber invalid: %v", err)
+		}
 		c, err := config.Init(*createCellConf)
 		if err != nil {
 			Fatalf("load config error: %v", err)
@@ -49,7 +64,7 @@ var createCellCmd = &cobra.Command{
 		capacity := uint64(14200000000)
 		fee := uint64(1000)
 
-		cellCollector := utils.NewCellCollector(client, change, utils.NewCapacityCellProcessor(capacity+fee))
+		cellCollector := utils.NewCellCollector(client, change, utils.NewCapacityCellProcessor(capacity+fee), unitFromBlockNumber)
 		cells, err := cellCollector.Collect()
 		if err != nil {
 			Fatalf("collect cell error: %v", err)
@@ -85,7 +100,7 @@ var createCellCmd = &cobra.Command{
 				Args:     types.HexToHash(*createCellUUID).Bytes(),
 			},
 		})
-		tx.OutputsData = append(tx.OutputsData, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,})
+		tx.OutputsData = append(tx.OutputsData, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
 
 		if cells.Capacity-capacity+fee > 6100000000 {
 			tx.Outputs = append(tx.Outputs, &types.CellOutput{
@@ -94,7 +109,7 @@ var createCellCmd = &cobra.Command{
 			})
 			tx.OutputsData = append(tx.OutputsData, []byte{})
 		} else {
-			tx.Outputs[1].Capacity = tx.Outputs[1].Capacity + cells.Capacity - capacity + fee
+			tx.Outputs[0].Capacity = tx.Outputs[0].Capacity + cells.Capacity - capacity - fee
 		}
 
 		group, witnessArgs, err := transaction.AddInputsForTransaction(tx, cells.Cells)
@@ -123,5 +138,6 @@ func init() {
 	createCellConf = createCellCmd.Flags().StringP("config", "c", "config.yaml", "Config file")
 	createCellKey = createCellCmd.Flags().StringP("key", "k", "", "Private key")
 	createCellUUID = createCellCmd.Flags().StringP("uuid", "u", "", "UDT uuid")
+	createCellFromBlockNumber = createCellCmd.Flags().StringP("createCellFromBlockNumber", "f", "", "From block number")
 	_ = createCellCmd.MarkFlagRequired("key")
 }

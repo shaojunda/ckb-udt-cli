@@ -7,9 +7,9 @@ import (
 	"math/big"
 	"os"
 
-	"github.com/ququzone/ckb-sdk-go/rpc"
-	"github.com/ququzone/ckb-sdk-go/types"
-	"github.com/ququzone/ckb-sdk-go/utils"
+	"github.com/nervosnetwork/ckb-sdk-go/rpc"
+	"github.com/nervosnetwork/ckb-sdk-go/types"
+	"github.com/nervosnetwork/ckb-sdk-go/utils"
 )
 
 func Fatalf(format string, v ...interface{}) {
@@ -55,7 +55,7 @@ func (p *UDTCellProcessor) Process(cell *types.Cell, result *utils.CollectResult
 }
 
 func CollectUDT(client rpc.Client, c *config.Config, lock *types.Script, uuid []byte, max *big.Int) (*utils.CollectResult, error) {
-	cellCollector := utils.NewCellCollector(client, lock, NewUDTCellProcessor(client, max))
+	cellCollector := utils.NewCellCollector(client, lock, NewUDTCellProcessor(client, max), 405342)
 	cellCollector.EmptyData = false
 	cellCollector.TypeScript = &types.Script{
 		CodeHash: types.HexToHash(c.UDT.Script.CodeHash),

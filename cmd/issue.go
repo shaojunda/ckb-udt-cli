@@ -4,20 +4,22 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strconv"
 
-	"github.com/ququzone/ckb-sdk-go/crypto/secp256k1"
-	"github.com/ququzone/ckb-sdk-go/rpc"
-	"github.com/ququzone/ckb-sdk-go/transaction"
-	"github.com/ququzone/ckb-sdk-go/types"
-	"github.com/ququzone/ckb-sdk-go/utils"
+	"github.com/nervosnetwork/ckb-sdk-go/crypto/secp256k1"
+	"github.com/nervosnetwork/ckb-sdk-go/rpc"
+	"github.com/nervosnetwork/ckb-sdk-go/transaction"
+	"github.com/nervosnetwork/ckb-sdk-go/types"
+	"github.com/nervosnetwork/ckb-sdk-go/utils"
 	"github.com/ququzone/ckb-udt-cli/config"
 	"github.com/spf13/cobra"
 )
 
 var (
-	issueConf   *string
-	issueKey    *string
-	issueAmount *string
+	issueConf            *string
+	issueKey             *string
+	issueAmount          *string
+	issueFromBlockNumber *string
 )
 
 var issueCmd = &cobra.Command{
@@ -25,6 +27,17 @@ var issueCmd = &cobra.Command{
 	Short: "Issue sUDT token",
 	Long:  `Issue sUDT with secp256k1 cell.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		var unitFromBlockNumber uint64
+		var err error
+		if *issueFromBlockNumber == "" {
+			unitFromBlockNumber = 0
+		} else {
+			unitFromBlockNumber, err = strconv.ParseUint(*issueFromBlockNumber, 10, 64)
+			if err != nil {
+				Fatalf("fromBlockNumber invalid: %v", err)
+			}
+		}
+
 		c, err := config.Init(*issueConf)
 		if err != nil {
 			Fatalf("load config error: %v", err)
@@ -50,7 +63,7 @@ var issueCmd = &cobra.Command{
 		capacity := uint64(14200000000)
 		fee := uint64(1000)
 
-		cellCollector := utils.NewCellCollector(client, change, utils.NewCapacityCellProcessor(capacity+fee))
+		cellCollector := utils.NewCellCollector(client, change, utils.NewCapacityCellProcessor(capacity+fee), unitFromBlockNumber)
 		cells, err := cellCollector.Collect()
 		if err != nil {
 			Fatalf("collect cell error: %v", err)
@@ -103,7 +116,7 @@ var issueCmd = &cobra.Command{
 			})
 			tx.OutputsData = append(tx.OutputsData, []byte{})
 		} else {
-			tx.Outputs[1].Capacity = tx.Outputs[1].Capacity + cells.Capacity - capacity + fee
+			tx.Outputs[0].Capacity = tx.Outputs[0].Capacity + cells.Capacity - capacity - fee
 		}
 
 		group, witnessArgs, err := transaction.AddInputsForTransaction(tx, cells.Cells)
@@ -131,6 +144,7 @@ func init() {
 	issueConf = issueCmd.Flags().StringP("config", "c", "config.yaml", "Config file")
 	issueKey = issueCmd.Flags().StringP("key", "k", "", "Issue private key")
 	issueAmount = issueCmd.Flags().StringP("amount", "a", "", "Issue amount")
+	issueFromBlockNumber = issueCmd.Flags().StringP("issueFromBlockNumber", "f", "", "From block number")
 	_ = issueCmd.MarkFlagRequired("key")
 	_ = issueCmd.MarkFlagRequired("amount")
 }
