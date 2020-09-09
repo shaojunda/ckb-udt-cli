@@ -54,8 +54,8 @@ func (p *UDTCellProcessor) Process(cell *types.Cell, result *utils.CollectResult
 	return false, nil
 }
 
-func CollectUDT(client rpc.Client, c *config.Config, lock *types.Script, uuid []byte, max *big.Int) (*utils.CollectResult, error) {
-	cellCollector := utils.NewCellCollector(client, lock, NewUDTCellProcessor(client, max), 405342)
+func CollectUDT(client rpc.Client, c *config.Config, lock *types.Script, uuid []byte, max *big.Int, fromBlockNumber uint64) (*utils.CollectResult, error) {
+	cellCollector := utils.NewCellCollector(client, lock, NewUDTCellProcessor(client, max), fromBlockNumber)
 	cellCollector.EmptyData = false
 	cellCollector.TypeScript = &types.Script{
 		CodeHash: types.HexToHash(c.UDT.Script.CodeHash),

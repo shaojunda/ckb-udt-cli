@@ -75,7 +75,7 @@ var transferCmd = &cobra.Command{
 
 		var recipientCell *types.Cell
 		if recipientAddr.Script.CodeHash.String() == c.ACP.Script.CodeHash {
-			cells, err := CollectUDT(client, c, recipientAddr.Script, uuid, big.NewInt(0))
+			cells, err := CollectUDT(client, c, recipientAddr.Script, uuid, big.NewInt(0), unitFromBlockNumber)
 			if err != nil {
 				Fatalf("collect cell error: %v", err)
 			}
@@ -98,14 +98,14 @@ var transferCmd = &cobra.Command{
 			Args:     fromSecp256k1Script.Args,
 		}
 
-		cells, err := CollectUDT(client, c, fromScript, uuid, amount)
+		cells, err := CollectUDT(client, c, fromScript, uuid, amount, unitFromBlockNumber)
 		if err != nil {
 			Fatalf("collect cell error: %v", err)
 		}
 
 		if cells.Options["total"].(*big.Int).Cmp(amount) < 0 {
 			fromScript = fromSecp256k1Script
-			cells, err = CollectUDT(client, c, fromScript, uuid, amount)
+			cells, err = CollectUDT(client, c, fromScript, uuid, amount, unitFromBlockNumber)
 			if err != nil {
 				Fatalf("collect cell error: %v", err)
 			}

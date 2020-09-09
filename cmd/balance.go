@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"math/big"
+	"strconv"
 
 	"github.com/nervosnetwork/ckb-sdk-go/address"
 	"github.com/nervosnetwork/ckb-sdk-go/rpc"
@@ -12,9 +13,10 @@ import (
 )
 
 var (
-	balanceConf *string
-	balanceUUID *string
-	balanceAddr *string
+	balanceConf            *string
+	balanceUUID            *string
+	balanceAddr            *string
+	balanceFromBlockNumber *string
 )
 
 var balanceCmd = &cobra.Command{
@@ -22,6 +24,16 @@ var balanceCmd = &cobra.Command{
 	Short: "Query sUDT balance",
 	Long:  `Query sUDT balance by address.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		var unitFromBlockNumber uint64
+		var err error
+		if *balanceFromBlockNumber == "" {
+			unitFromBlockNumber = 0
+		} else {
+			unitFromBlockNumber, err = strconv.ParseUint(*balanceFromBlockNumber, 10, 64)
+			if err != nil {
+				Fatalf("fromBlockNumber invalid: %v", err)
+			}
+		}
 		c, err := config.Init(*balanceConf)
 		if err != nil {
 			Fatalf("load config error: %v", err)
@@ -37,7 +49,7 @@ var balanceCmd = &cobra.Command{
 			Fatalf("parse address error: %v", err)
 		}
 
-		cells, err := CollectUDT(client, c, addr.Script, types.HexToHash(*balanceUUID).Bytes(), nil)
+		cells, err := CollectUDT(client, c, addr.Script, types.HexToHash(*balanceUUID).Bytes(), nil, unitFromBlockNumber)
 		if err != nil {
 			Fatalf("collect cell error: %v", err)
 		}
@@ -52,6 +64,7 @@ func init() {
 	balanceConf = balanceCmd.Flags().StringP("config", "c", "config.yaml", "Config file")
 	balanceUUID = balanceCmd.Flags().StringP("uuid", "u", "", "UDT uuid")
 	balanceAddr = balanceCmd.Flags().StringP("address", "a", "", "Address")
+	balanceFromBlockNumber = balanceCmd.Flags().StringP("balanceFromBlockNumber", "f", "", "From block number")
 	_ = balanceCmd.MarkFlagRequired("uuid")
 	_ = balanceCmd.MarkFlagRequired("address")
 }
