@@ -1,5 +1,5 @@
 rpc: http://localhost:8114
-
+ckbIndexer: "http://localhost:8116"
 # sUDT script definition
 udt:
   deps:

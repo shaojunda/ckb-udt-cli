@@ -7,9 +7,9 @@ import (
 )
 
 type Config struct {
-	RPC string `yaml:"rpc"`
-
-	UDT struct {
+	RPC        string `yaml:"rpc"`
+	CkbIndexer string `yaml:"ckbIndexer"`
+	UDT        struct {
 		Deps []struct {
 			TxHash  string `yaml:"txHash"`
 			Index   uint   `yaml:"index"`
