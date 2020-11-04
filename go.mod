@@ -7,7 +7,7 @@ require (
 	github.com/deckarep/golang-set v1.7.1 // indirect
 	github.com/elastic/gosigar v0.10.5 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
-	github.com/nervosnetwork/ckb-sdk-go v0.0.0-20200909025830-625d64767d8b
+	github.com/nervosnetwork/ckb-sdk-go v0.0.0-20201104063014-af53e6797808
 	github.com/spf13/cobra v1.0.0
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/crypto v0.0.0-20200510223506-06a226fb4e37 // indirect
