@@ -3,10 +3,9 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strconv"
-
 	"github.com/nervosnetwork/ckb-sdk-go/address"
 	"github.com/nervosnetwork/ckb-sdk-go/crypto/secp256k1"
+	"github.com/nervosnetwork/ckb-sdk-go/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/rpc"
 	"github.com/nervosnetwork/ckb-sdk-go/transaction"
 	"github.com/nervosnetwork/ckb-sdk-go/types"
@@ -16,10 +15,9 @@ import (
 )
 
 var (
-	createCellConf            *string
-	createCellKey             *string
-	createCellUUID            *string
-	createCellFromBlockNumber *string
+	createCellConf *string
+	createCellKey  *string
+	createCellUUID *string
 )
 
 var createCellCmd = &cobra.Command{
@@ -27,25 +25,12 @@ var createCellCmd = &cobra.Command{
 	Short: "create anyone can pay cell for sUDT token",
 	Long:  `create anyone can pay cell for sUDT token.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		var unitFromBlockNumber uint64
-		var err error
-		if *createCellFromBlockNumber == "" {
-			unitFromBlockNumber = 0
-		} else {
-			unitFromBlockNumber, err = strconv.ParseUint(*createCellFromBlockNumber, 10, 64)
-			if err != nil {
-				Fatalf("fromBlockNumber invalid: %v", err)
-			}
-		}
-		if err != nil {
-			Fatalf("fromBlockNumber invalid: %v", err)
-		}
 		c, err := config.Init(*createCellConf)
 		if err != nil {
 			Fatalf("load config error: %v", err)
 		}
 
-		client, err := rpc.Dial(c.RPC)
+		client, err := rpc.DialWithIndexer(c.RPC, c.CkbIndexer)
 		if err != nil {
 			Fatalf("create rpc client error: %v", err)
 		}
@@ -63,8 +48,11 @@ var createCellCmd = &cobra.Command{
 		change, err := key.Script(scripts)
 		capacity := uint64(14200000000)
 		fee := uint64(1000)
-
-		cellCollector := utils.NewCellCollector(client, change, utils.NewCapacityCellProcessor(capacity+fee), unitFromBlockNumber)
+		searchKey := &indexer.SearchKey{
+			Script:     change,
+			ScriptType: "lock",
+		}
+		cellCollector := utils.NewLiveCellCollector(client, searchKey, "asc", 1000, "", utils.NewCapacityLiveCellProcessor(capacity+fee))
 		cells, err := cellCollector.Collect()
 		if err != nil {
 			Fatalf("collect cell error: %v", err)
@@ -112,7 +100,14 @@ var createCellCmd = &cobra.Command{
 			tx.Outputs[0].Capacity = tx.Outputs[0].Capacity + cells.Capacity - capacity - fee
 		}
 
-		group, witnessArgs, err := transaction.AddInputsForTransaction(tx, cells.Cells)
+		var inputs []*types.CellInput
+		for _, cell := range cells.LiveCells {
+			inputs = append(inputs, &types.CellInput{
+				Since:          0,
+				PreviousOutput: cell.OutPoint,
+			})
+		}
+		group, witnessArgs, err := transaction.AddInputsForTransaction(tx, inputs)
 		if err != nil {
 			Fatalf("add inputs to transaction error: %v", err)
 		}
@@ -138,6 +133,5 @@ func init() {
 	createCellConf = createCellCmd.Flags().StringP("config", "c", "config.yaml", "Config file")
 	createCellKey = createCellCmd.Flags().StringP("key", "k", "", "Private key")
 	createCellUUID = createCellCmd.Flags().StringP("uuid", "u", "", "UDT uuid")
-	createCellFromBlockNumber = createCellCmd.Flags().StringP("createCellFromBlockNumber", "f", "", "From block number")
 	_ = createCellCmd.MarkFlagRequired("key")
 }

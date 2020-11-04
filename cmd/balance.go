@@ -2,21 +2,19 @@ package cmd
 
 import (
 	"fmt"
-	"math/big"
-	"strconv"
-
 	"github.com/nervosnetwork/ckb-sdk-go/address"
+	"github.com/nervosnetwork/ckb-sdk-go/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/rpc"
 	"github.com/nervosnetwork/ckb-sdk-go/types"
 	"github.com/ququzone/ckb-udt-cli/config"
 	"github.com/spf13/cobra"
+	"math/big"
 )
 
 var (
-	balanceConf            *string
-	balanceUUID            *string
-	balanceAddr            *string
-	balanceFromBlockNumber *string
+	balanceConf *string
+	balanceUUID *string
+	balanceAddr *string
 )
 
 var balanceCmd = &cobra.Command{
@@ -24,22 +22,12 @@ var balanceCmd = &cobra.Command{
 	Short: "Query sUDT balance",
 	Long:  `Query sUDT balance by address.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		var unitFromBlockNumber uint64
-		var err error
-		if *balanceFromBlockNumber == "" {
-			unitFromBlockNumber = 0
-		} else {
-			unitFromBlockNumber, err = strconv.ParseUint(*balanceFromBlockNumber, 10, 64)
-			if err != nil {
-				Fatalf("fromBlockNumber invalid: %v", err)
-			}
-		}
 		c, err := config.Init(*balanceConf)
 		if err != nil {
 			Fatalf("load config error: %v", err)
 		}
 
-		client, err := rpc.Dial(c.RPC)
+		client, err := rpc.DialWithIndexer(c.RPC, c.CkbIndexer)
 		if err != nil {
 			Fatalf("create rpc client error: %v", err)
 		}
@@ -48,8 +36,11 @@ var balanceCmd = &cobra.Command{
 		if err != nil {
 			Fatalf("parse address error: %v", err)
 		}
-
-		cells, err := CollectUDT(client, c, addr.Script, types.HexToHash(*balanceUUID).Bytes(), nil, unitFromBlockNumber)
+		searchKey := &indexer.SearchKey{
+			Script:     addr.Script,
+			ScriptType: "lock",
+		}
+		cells, err := CollectUDT(client, c, searchKey, "asc", 1000, "", types.HexToHash(*balanceUUID).Bytes(), nil)
 		if err != nil {
 			Fatalf("collect cell error: %v", err)
 		}
@@ -64,7 +55,6 @@ func init() {
 	balanceConf = balanceCmd.Flags().StringP("config", "c", "config.yaml", "Config file")
 	balanceUUID = balanceCmd.Flags().StringP("uuid", "u", "", "UDT uuid")
 	balanceAddr = balanceCmd.Flags().StringP("address", "a", "", "Address")
-	balanceFromBlockNumber = balanceCmd.Flags().StringP("balanceFromBlockNumber", "f", "", "From block number")
 	_ = balanceCmd.MarkFlagRequired("uuid")
 	_ = balanceCmd.MarkFlagRequired("address")
 }

@@ -3,23 +3,21 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"math/big"
-	"strconv"
-
 	"github.com/nervosnetwork/ckb-sdk-go/crypto/secp256k1"
+	"github.com/nervosnetwork/ckb-sdk-go/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/rpc"
 	"github.com/nervosnetwork/ckb-sdk-go/transaction"
 	"github.com/nervosnetwork/ckb-sdk-go/types"
 	"github.com/nervosnetwork/ckb-sdk-go/utils"
 	"github.com/ququzone/ckb-udt-cli/config"
 	"github.com/spf13/cobra"
+	"math/big"
 )
 
 var (
-	issueConf            *string
-	issueKey             *string
-	issueAmount          *string
-	issueFromBlockNumber *string
+	issueConf   *string
+	issueKey    *string
+	issueAmount *string
 )
 
 var issueCmd = &cobra.Command{
@@ -27,23 +25,12 @@ var issueCmd = &cobra.Command{
 	Short: "Issue sUDT token",
 	Long:  `Issue sUDT with secp256k1 cell.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		var unitFromBlockNumber uint64
-		var err error
-		if *issueFromBlockNumber == "" {
-			unitFromBlockNumber = 0
-		} else {
-			unitFromBlockNumber, err = strconv.ParseUint(*issueFromBlockNumber, 10, 64)
-			if err != nil {
-				Fatalf("fromBlockNumber invalid: %v", err)
-			}
-		}
-
 		c, err := config.Init(*issueConf)
 		if err != nil {
 			Fatalf("load config error: %v", err)
 		}
 
-		client, err := rpc.Dial(c.RPC)
+		client, err := rpc.DialWithIndexer(c.RPC, c.CkbIndexer)
 		if err != nil {
 			Fatalf("create rpc client error: %v", err)
 		}
@@ -62,8 +49,11 @@ var issueCmd = &cobra.Command{
 
 		capacity := uint64(14200000000)
 		fee := uint64(1000)
-
-		cellCollector := utils.NewCellCollector(client, change, utils.NewCapacityCellProcessor(capacity+fee), unitFromBlockNumber)
+		searchKey := &indexer.SearchKey{
+			Script:     change,
+			ScriptType: "lock",
+		}
+		cellCollector := utils.NewLiveCellCollector(client, searchKey, "asc", 1000, "", utils.NewCapacityLiveCellProcessor(capacity+fee))
 		cells, err := cellCollector.Collect()
 		if err != nil {
 			Fatalf("collect cell error: %v", err)
@@ -118,8 +108,14 @@ var issueCmd = &cobra.Command{
 		} else {
 			tx.Outputs[0].Capacity = tx.Outputs[0].Capacity + cells.Capacity - capacity - fee
 		}
-
-		group, witnessArgs, err := transaction.AddInputsForTransaction(tx, cells.Cells)
+		var inputs []*types.CellInput
+		for _, cell := range cells.LiveCells {
+			inputs = append(inputs, &types.CellInput{
+				Since:          0,
+				PreviousOutput: cell.OutPoint,
+			})
+		}
+		group, witnessArgs, err := transaction.AddInputsForTransaction(tx, inputs)
 		if err != nil {
 			Fatalf("add inputs to transaction error: %v", err)
 		}
@@ -144,7 +140,6 @@ func init() {
 	issueConf = issueCmd.Flags().StringP("config", "c", "config.yaml", "Config file")
 	issueKey = issueCmd.Flags().StringP("key", "k", "", "Issue private key")
 	issueAmount = issueCmd.Flags().StringP("amount", "a", "", "Issue amount")
-	issueFromBlockNumber = issueCmd.Flags().StringP("issueFromBlockNumber", "f", "", "From block number")
 	_ = issueCmd.MarkFlagRequired("key")
 	_ = issueCmd.MarkFlagRequired("amount")
 }

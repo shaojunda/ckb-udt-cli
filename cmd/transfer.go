@@ -3,26 +3,24 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"math/big"
-	"strconv"
-
 	"github.com/nervosnetwork/ckb-sdk-go/address"
 	"github.com/nervosnetwork/ckb-sdk-go/crypto/secp256k1"
+	"github.com/nervosnetwork/ckb-sdk-go/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/rpc"
 	"github.com/nervosnetwork/ckb-sdk-go/transaction"
 	"github.com/nervosnetwork/ckb-sdk-go/types"
 	"github.com/nervosnetwork/ckb-sdk-go/utils"
 	"github.com/ququzone/ckb-udt-cli/config"
 	"github.com/spf13/cobra"
+	"math/big"
 )
 
 var (
-	transferConf            *string
-	transferKey             *string
-	transferAmount          *string
-	transferTo              *string
-	transferUUID            *string
-	transferFromBlockNumber *string
+	transferConf   *string
+	transferKey    *string
+	transferAmount *string
+	transferTo     *string
+	transferUUID   *string
 )
 
 var transferCmd = &cobra.Command{
@@ -30,25 +28,12 @@ var transferCmd = &cobra.Command{
 	Short: "Transfer sUDT token",
 	Long:  `Transfer sUDT from secp256k1 lock cell.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		var unitFromBlockNumber uint64
-		var err error
-		if *transferFromBlockNumber == "" {
-			unitFromBlockNumber = 0
-		} else {
-			unitFromBlockNumber, err = strconv.ParseUint(*transferFromBlockNumber, 10, 64)
-			if err != nil {
-				Fatalf("fromBlockNumber invalid: %v", err)
-			}
-		}
-		if err != nil {
-			Fatalf("fromBlockNumber invalid: %v", err)
-		}
 		c, err := config.Init(*transferConf)
 		if err != nil {
 			Fatalf("load config error: %v", err)
 		}
 
-		client, err := rpc.Dial(c.RPC)
+		client, err := rpc.DialWithIndexer(c.RPC, c.CkbIndexer)
 		if err != nil {
 			Fatalf("create rpc client error: %v", err)
 		}
@@ -73,16 +58,20 @@ var transferCmd = &cobra.Command{
 			Fatalf("parse to address error: %v", err)
 		}
 
-		var recipientCell *types.Cell
+		var recipientCell *indexer.LiveCell
 		if recipientAddr.Script.CodeHash.String() == c.ACP.Script.CodeHash {
-			cells, err := CollectUDT(client, c, recipientAddr.Script, uuid, big.NewInt(0), unitFromBlockNumber)
+			searchKey := &indexer.SearchKey{
+				Script:     recipientAddr.Script,
+				ScriptType: "lock",
+			}
+			cells, err := CollectUDT(client, c, searchKey, "asc", 1000, "", uuid, big.NewInt(0))
 			if err != nil {
 				Fatalf("collect cell error: %v", err)
 			}
-			if len(cells.Cells) == 0 {
+			if len(cells.LiveCells) == 0 {
 				Fatalf("can't find anyone can pay cell for %s", *transferTo)
 			}
-			recipientCell = cells.Cells[0]
+			recipientCell = cells.LiveCells[0]
 		}
 
 		scripts, err := utils.NewSystemScripts(client)
@@ -92,20 +81,30 @@ var transferCmd = &cobra.Command{
 
 		fromAcp := true
 		fromSecp256k1Script, err := key.Script(scripts)
+		if err != nil {
+			Fatalf("load system script error: %v", err)
+		}
 		fromScript := &types.Script{
 			CodeHash: types.HexToHash(c.ACP.Script.CodeHash),
 			HashType: types.ScriptHashType(c.ACP.Script.HashType),
 			Args:     fromSecp256k1Script.Args,
 		}
-
-		cells, err := CollectUDT(client, c, fromScript, uuid, amount, unitFromBlockNumber)
+		searchKey := &indexer.SearchKey{
+			Script:     fromScript,
+			ScriptType: "lock",
+		}
+		cells, err := CollectUDT(client, c, searchKey, "asc", 1000, "", uuid, amount)
 		if err != nil {
 			Fatalf("collect cell error: %v", err)
 		}
 
 		if cells.Options["total"].(*big.Int).Cmp(amount) < 0 {
 			fromScript = fromSecp256k1Script
-			cells, err = CollectUDT(client, c, fromScript, uuid, amount, unitFromBlockNumber)
+			searchKey := &indexer.SearchKey{
+				Script:     fromScript,
+				ScriptType: "lock",
+			}
+			cells, err = CollectUDT(client, c, searchKey, "asc", 1000, "", uuid, amount)
 			if err != nil {
 				Fatalf("collect cell error: %v", err)
 			}
@@ -137,9 +136,13 @@ var transferCmd = &cobra.Command{
 			}
 		}
 
-		var feeCells *utils.CollectResult
+		var feeCells *utils.LiveCellCollectResult
+		searchKey = &indexer.SearchKey{
+			Script:     fromScript,
+			ScriptType: "lock",
+		}
 		if cells.Capacity < capacity+fee {
-			cellCollector := utils.NewCellCollector(client, fromScript, utils.NewCapacityCellProcessor(capacity+fee-cells.Capacity), unitFromBlockNumber)
+			cellCollector := utils.NewLiveCellCollector(client, searchKey, "asc", 1000, "", utils.NewCapacityLiveCellProcessor(capacity+fee-cells.Capacity))
 			feeCells, err = cellCollector.Collect()
 			if err != nil {
 				Fatalf("collect cell error: %v", err)
@@ -162,9 +165,9 @@ var transferCmd = &cobra.Command{
 			tx.Inputs = append(tx.Inputs, input)
 			tx.Witnesses = append(tx.Witnesses, []byte{})
 			tx.Outputs = append(tx.Outputs, &types.CellOutput{
-				Capacity: recipientCell.Capacity,
-				Lock:     recipientCell.Lock,
-				Type:     recipientCell.Type,
+				Capacity: recipientCell.Output.Capacity,
+				Lock:     recipientCell.Output.Lock,
+				Type:     recipientCell.Output.Type,
 			})
 			originTx, err := client.GetTransaction(context.Background(), recipientCell.OutPoint.TxHash)
 			if err != nil {
@@ -260,10 +263,20 @@ var transferCmd = &cobra.Command{
 			tx.Outputs[1].Capacity = change
 		}
 
-		var inputs []*types.Cell
-		inputs = append(inputs, cells.Cells...)
+		var inputs []*types.CellInput
+		for _, cell := range cells.LiveCells {
+			inputs = append(inputs, &types.CellInput{
+				Since:          0,
+				PreviousOutput: cell.OutPoint,
+			})
+		}
 		if feeCells != nil {
-			inputs = append(inputs, feeCells.Cells...)
+			for _, cell := range feeCells.LiveCells {
+				inputs = append(inputs, &types.CellInput{
+					Since:          0,
+					PreviousOutput: cell.OutPoint,
+				})
+			}
 		}
 
 		group, witnessArgs, err := transaction.AddInputsForTransaction(tx, inputs)
@@ -294,7 +307,6 @@ func init() {
 	transferUUID = transferCmd.Flags().StringP("uuid", "u", "", "UDT uuid")
 	transferAmount = transferCmd.Flags().StringP("amount", "a", "", "Transfer amount")
 	transferTo = transferCmd.Flags().StringP("to", "t", "", "Transfer recipient address")
-	transferFromBlockNumber = transferCmd.Flags().StringP("transferFromBlockNumber", "f", "", "From block number")
 	_ = transferCmd.MarkFlagRequired("key")
 	_ = transferCmd.MarkFlagRequired("amount")
 	_ = transferCmd.MarkFlagRequired("uuid")
