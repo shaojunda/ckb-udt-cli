@@ -40,6 +40,7 @@ func (p *UDTCellProcessor) Process(liveCell *indexer.LiveCell, result *utils.Liv
 	if ok {
 		result.Options["total"] = big.NewInt(0).Add(total.(*big.Int), amount)
 	} else {
+		result.Options = make(map[string]interface{})
 		result.Options["total"] = amount
 	}
 	if p.Max != nil && result.Options["total"].(*big.Int).Cmp(p.Max) >= 0 {
