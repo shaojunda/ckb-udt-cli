@@ -143,6 +143,7 @@ var transferCmd = &cobra.Command{
 		}
 		if cells.Capacity < capacity+fee {
 			cellCollector := utils.NewLiveCellCollector(client, searchKey, "asc", 1000, "", utils.NewCapacityLiveCellProcessor(capacity+fee-cells.Capacity))
+			cellCollector.EmptyData = true
 			feeCells, err = cellCollector.Collect()
 			if err != nil {
 				Fatalf("collect cell error: %v", err)
